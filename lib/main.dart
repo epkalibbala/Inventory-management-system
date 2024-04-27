@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:bar_scanner/api/sheets/user_api_sheets.dart';
+import 'package:bar_scanner/model/item_picture.dart';
 import 'package:bar_scanner/model/secondary_map.dart';
 // import 'package:http/http.dart' as http;
-// import 'dart:io';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 // import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
@@ -32,15 +35,21 @@ class _MyAppState extends State<MyApp> {
   late TextEditingController controllerVolume;
   late TextEditingController controllerDescription;
   final formKey = GlobalKey<FormState>();
+  final DBHelper dbHelper = DBHelper();
+  List<ItemPicture> pictures = [];
+  List<String> itemPictures = [];
 
   @override
   void initState() {
     super.initState();
 
+    dbHelper.getItems().then((value) => pictures = value); // Fetching pictures from Sqlite
+
     controllerVolume = TextEditingController();
     controllerDescription = TextEditingController();
 
-    getItems().then((value) { // Fetching stock
+    getItems().then((value) {
+      // Fetching stock
       Map<dynamic, dynamic> data = {};
       items.forEach((item) {
         data[item.code] = {
@@ -81,7 +90,8 @@ class _MyAppState extends State<MyApp> {
       });
     });
     // print('data');
-    getItemsCodes().then((value) { // Fetching secondary barcodes data
+    getItemsCodes().then((value) {
+      // Fetching secondary barcodes data
       Map<dynamic, dynamic> dataCodes = {};
       itemsId.forEach((item) {
         dataCodes[item.barcode] = {
@@ -116,16 +126,20 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  int countSpecificValueOccurrences( // Count of how many barcodes have similar itemIDs
-      Map dataCodes, String fieldName, dynamic targetValue) {
+  int countSpecificValueOccurrences(
+      // Count of how many barcodes have similar itemIDs
+      Map dataCodes,
+      String fieldName,
+      dynamic targetValue) {
     int count = 0;
     dataCodes.values.forEach((value) {
       if (value[fieldName] == targetValue) {
         // Count of items under specific bar code
         count++;
-        barcodesSimilarItem.add(dataCodes.keys.firstWhere( // List of barcodes with similar item id
-      (key) => dataCodes[key] == value,
-    ));
+        barcodesSimilarItem.add(dataCodes.keys.firstWhere(
+          // List of barcodes with similar item id
+          (key) => dataCodes[key] == value,
+        ));
       }
     });
     return count;
@@ -238,8 +252,34 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  Future<void> _takePicture() async {
+    final picker = ImagePicker();
+    final imageFile =
+        await picker.pickImage(source: ImageSource.camera, imageQuality: 30);
+    final appDir = await getApplicationDocumentsDirectory();
+    if (imageFile != null) {
+      final fileName = imageFile.path.split('/').last;
+      final savedImage =
+          await File(imageFile.path).copy('${appDir.path}/$fileName');
+      final newItem = ItemPicture(barcode: _barcode, imagePath: savedImage.path);
+      setState(() {
+        pictures.add(newItem);
+      });
+      await dbHelper.insertItem(newItem);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+
+    itemPictures = (pictures
+              .where((ItemPicture item) =>
+                      // item.barcode ==
+                      //     _barcode 
+                      barcodesSimilarItem.contains(item.barcode)
+                  ) // List of ItemPicture objects
+              .toList()).map((obj) => obj.imagePath).toList(); // Extracting imagePath properties to a list
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
@@ -247,12 +287,26 @@ class _MyAppState extends State<MyApp> {
           title: const Text('Barcode Scanner'),
         ),
         body: Stack(children: [
-          Center(
-            child: Padding(
+          // Center(
+            Padding(
               padding: const EdgeInsets.all(8.0),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.start,
                 children: <Widget>[
+                  itemPictures.isNotEmpty ? Container(padding: const EdgeInsets.all(8),
+                    height: 200,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemBuilder: (BuildContext context, int index) { // horizotal listview of item pictures
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: Image.file(File(itemPictures[index])),
+                        );
+                       },
+                       itemCount: itemPictures.length,
+                      // children: [],
+                    ),
+                  ) : Container(),
                   Text('Scanned Barcode: $_barcode'),
                   const SizedBox(height: 20),
                   ElevatedButton(
@@ -264,7 +318,7 @@ class _MyAppState extends State<MyApp> {
                 ],
               ),
             ),
-          ),
+          // ),
           DraggableScrollableSheet(
               initialChildSize: 0.125,
               minChildSize: 0.125,
@@ -283,6 +337,7 @@ class _MyAppState extends State<MyApp> {
                         // final car = cars[index];
                         if (_barcode.isEmpty ||
                             displayResult == 'Scanning cancelled') {
+                          // Body returned incase of scanning error
                           return const Padding(
                               padding: EdgeInsets.all(8.0),
                               child: Column(
@@ -473,10 +528,17 @@ class _MyAppState extends State<MyApp> {
                                                   var description =
                                                       decodedResult[itemId]
                                                           ['Description'];
-                                                  var quantityPC = decodedResult[itemId]['Qty_pc'];
-                                                  var quantityBX = decodedResult[itemId]['Qty_bx'];
-                                                  var expQuantity = decodedResult[itemId]['exp_Qty'];
-                                                  final item = { // Details sending updates of stock to google sheets
+                                                  var quantityPC =
+                                                      decodedResult[itemId]
+                                                          ['Qty_pc'];
+                                                  var quantityBX =
+                                                      decodedResult[itemId]
+                                                          ['Qty_bx'];
+                                                  var expQuantity =
+                                                      decodedResult[itemId]
+                                                          ['exp_Qty'];
+                                                  final item = {
+                                                    // Details sending updates of stock to google sheets
                                                     ItemFields.code: itemId,
                                                     ItemFields.id: _barcode,
                                                     ItemFields.description:
@@ -493,21 +555,24 @@ class _MyAppState extends State<MyApp> {
                                                     ItemFields.shelfQuantity:
                                                         controllerVolume.text
                                                   };
-                                                  await UserSheetsApi.insert([item])
-                                                  .then((value) {
-                                                const snackdemo = SnackBar(
-                                                  content: Text(
-                                                      'Stock volume successfully captured.'),
-                                                  backgroundColor: Colors.green,
-                                                  elevation: 10,
-                                                  behavior:
-                                                      SnackBarBehavior.floating,
-                                                  margin: EdgeInsets.all(5),
-                                                );
-                                                ScaffoldMessenger.of(context)
-                                                    .showSnackBar(snackdemo);
-                                                controllerVolume.clear();
-                                              });
+                                                  await UserSheetsApi.insert(
+                                                      [item]).then((value) {
+                                                    const snackdemo = SnackBar(
+                                                      content: Text(
+                                                          'Stock volume successfully captured.'),
+                                                      backgroundColor:
+                                                          Colors.green,
+                                                      elevation: 10,
+                                                      behavior: SnackBarBehavior
+                                                          .floating,
+                                                      margin: EdgeInsets.all(5),
+                                                    );
+                                                    ScaffoldMessenger.of(
+                                                            context)
+                                                        .showSnackBar(
+                                                            snackdemo);
+                                                    controllerVolume.clear();
+                                                  });
                                                 }
                                               }
                                             } else {
@@ -517,11 +582,17 @@ class _MyAppState extends State<MyApp> {
                                               });
                                             }
                                           }
-                                          
                                         }
                                       },
                                       child: const Text('Send update'),
                                     ),
+                                    const SizedBox(
+                                      height: 20,
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: _takePicture,
+                                      child: const Text('Take Picture'),
+                                    )
                                   ],
                                 ),
                               ),

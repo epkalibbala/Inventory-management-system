@@ -42,6 +42,9 @@ dependencies:
   scoped_model: ^2.0.0
   mime: ^1.0.5
   shared_preferences: ^2.2.3
+  path_provider: ^2.1.3
+  sqflite: ^2.3.2
+  image_picker: ^1.0.8
 
 dev_dependencies:
   flutter_test:
