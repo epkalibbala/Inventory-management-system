@@ -18,12 +18,23 @@ import 'package:flutter/services.dart';
 
 import 'model/item.dart';
 
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   @override
-  _MyAppState createState() => _MyAppState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Barcode Scanner',
+      home: MyWidget(),
+    );
+  }
 }
 
-class _MyAppState extends State<MyApp> {
+class MyWidget extends StatefulWidget {
+  @override
+  _MyWidgetState createState() => _MyWidgetState();
+}
+
+class _MyWidgetState extends State<MyWidget> {
+  String _indexNo = '';
   Map _dataCodes = {};
   String _barcode = '';
   String _result = '';
@@ -34,6 +45,7 @@ class _MyAppState extends State<MyApp> {
   List<Item> items = [];
   late TextEditingController controllerVolume;
   late TextEditingController controllerDescription;
+  late TextEditingController controllerCode;
   final formKey = GlobalKey<FormState>();
   final DBHelper dbHelper = DBHelper();
   List<ItemPicture> pictures = [];
@@ -45,8 +57,14 @@ class _MyAppState extends State<MyApp> {
 
     dbHelper.getItems().then((value) => pictures = value); // Fetching pictures from Sqlite
 
+    if (_indexNo.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showDialog());
+    }
+    // _showDialog;
+
     controllerVolume = TextEditingController();
     controllerDescription = TextEditingController();
+    controllerCode = TextEditingController();
 
     getItems().then((value) {
       // Fetching stock
@@ -77,10 +95,10 @@ class _MyAppState extends State<MyApp> {
           if (key != null) {
             if (key.endsWith('.0')) {
               // Remove ".0" from the key and store the modified key in the new map
-              modifiedMap[key.replaceAll('.0', '')] = value;
+              modifiedMap[(key.replaceAll('.0', '')).trim()] = value;
             } else {
               // If the key does not end with ".0", simply copy it to the new map
-              modifiedMap[key] = value;
+              modifiedMap[key.trim()] = value;
             }
           }
         });
@@ -112,10 +130,10 @@ class _MyAppState extends State<MyApp> {
           if (key != null) {
             if (key.endsWith('.0')) {
               // Remove ".0" from the key and store the modified key in the new map
-              modifiedMap[key.replaceAll('.0', '')] = value;
+              modifiedMap[(key.replaceAll('.0', '')).trim()] = value;
             } else {
               // If the key does not end with ".0", simply copy it to the new map
-              modifiedMap[key] = value;
+              modifiedMap[key.trim()] = value;
             }
           }
         });
@@ -146,20 +164,22 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _scanBarcode() async {
-    barcodesSimilarItem.clear(); // Clear barcode list under single item
+    barcodesSimilarItem.clear(); // Clear barcode list under single item 
+    _showDialog();
     try {
       ScanResult result = await BarcodeScanner.scan();
       setState(() {
         _barcode = result.rawContent;
       });
-
+      print(_barcode);
       if (_resultCodes.isNotEmpty) {
         var decodedResult = jsonDecode(_resultCodes);
 
         if (decodedResult.containsKey(_barcode)) {
+          // print("Not empty_______");
           var itemId = decodedResult[_barcode][
               'item_id']; // The bar code reads from the secondary codes file, returns item id which is used to identify the item
-          if (itemsId.isNotEmpty) {
+          if (itemsId.isNotEmpty) { // Testing if itemsId is not a number
             var decodedResult = jsonDecode(_result);
             if (decodedResult.containsKey(itemId)) {
               var description = decodedResult[itemId]['Description'];
@@ -178,6 +198,7 @@ class _MyAppState extends State<MyApp> {
 
               setState(() {
                 displayResult =
+                    // 'Description: $description\nExpected Quantity: $expQuantity\nCurrent Quantity (PC): $quantityPC\nCurrent Quantity (BX/CTN/DZ): $quantityBX\nPrice: ${formatter.format(int.parse(price))}\nCount of items under barcode: ${countSpecificValueOccurrences(_dataCodes, 'item_id', itemId)}\nList of item barcodes:\n${barcodesSimilarItem.join(', ')}\n\nAs of: $formattedDate';
                     'Description: $description\nExpected Quantity: $expQuantity\nCurrent Quantity (PC): $quantityPC\nCurrent Quantity (BX/CTN/DZ): $quantityBX\nPrice: ${formatter.format(int.parse(price))}\nCount of items under barcode: ${countSpecificValueOccurrences(_dataCodes, 'item_id', itemId)}\nList of item barcodes:\n${barcodesSimilarItem.join(', ')}\n\nAs of: $formattedDate';
                 // print(displayResult);
                 // print("result one");
@@ -210,8 +231,25 @@ class _MyAppState extends State<MyApp> {
               };
               await UserSheetsApi.insertLog([item]).then((value) => null);
             }
-          }
+          }  
         }
+        else { // Second block of code to capture unregistered barcodes by setting displayResult to item not found
+              setState(() {
+                displayResult = 'Item not found';
+                // print(displayResult);
+                // print("result two");
+              });
+              final item = {
+                ItemFields.id: _barcode,
+                ItemFields.description: 'Item not found',
+                ItemFields.quantityPC: 'Item not found',
+                ItemFields.quantityBX: 'Item not found',
+                ItemFields.expQuantity: 'Item not found',
+                ItemFields.date: DateTime.now().toIso8601String(),
+                ItemFields.shelfQuantity: 0
+              };
+              await UserSheetsApi.insertLog([item]).then((value) => null);
+            }
       }
     } on PlatformException catch (e) {
       if (e.code == BarcodeScanner.cameraAccessDenied) {
@@ -269,6 +307,40 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
+  void _showDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Enter code'),
+          content: TextFormField(
+            keyboardType: TextInputType.number,
+            controller: controllerCode,
+            decoration: const InputDecoration(
+              labelText: 'Code',
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) =>
+                value!.length < 4 || value.isEmpty ? 'Enter correct code' : null,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _indexNo = controllerCode.text;
+                });
+                Navigator.of(context).pop();
+              },
+              child: Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
 
@@ -276,13 +348,42 @@ class _MyAppState extends State<MyApp> {
               .where((ItemPicture item) =>
                       // item.barcode ==
                       //     _barcode 
-                      barcodesSimilarItem.contains(item.barcode)
+                      barcodesSimilarItem.contains(item.barcode) // List of all bar codes attached to same item Id
                   ) // List of ItemPicture objects
               .toList()).map((obj) => obj.imagePath).toList(); // Extracting imagePath properties to a list
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
+    // indexNo == '' ? showDialog(
+    //             context: context,
+    //             barrierDismissible: false,
+    //             builder: (BuildContext context) {
+    //               return AlertDialog(
+    //                 title: const Text('Enter code'),
+    //                 content: TextFormField(
+    //                                     keyboardType: TextInputType.number,
+    //                                     controller: controllerCode,
+    //                                     decoration: const InputDecoration(
+    //                                       labelText: 'Code',
+    //                                       border: OutlineInputBorder(),
+    //                                     ),
+    //                                     validator: (value) =>
+    //                                         value!.length < 4 || value.isEmpty
+    //                                             ? 'Enter correct code'
+    //                                             : null,
+    //                                   ),
+    //                 actions: [
+    //                   TextButton(
+    //                     onPressed: () {
+    //                       indexNo = controllerCode.text;
+    //                       Navigator.of(context).pop();
+    //                     },
+    //                     child: Text('OK'),
+    //                   ),
+    //                 ],
+    //               );
+    //             },
+    //           ) : (){};
+
+    return Scaffold(
         appBar: AppBar(
           title: const Text('Barcode Scanner'),
         ),
@@ -314,7 +415,8 @@ class _MyAppState extends State<MyApp> {
                     child: const Text('Scan Barcode'),
                   ),
                   const SizedBox(height: 20),
-                  _barcode.isNotEmpty ? Text(displayResult) : const Text(""),
+                  // _barcode.isNotEmpty ? Text(displayResult) : const Text(""),
+                  Text(displayResult),
                 ],
               ),
             ),
@@ -352,7 +454,7 @@ class _MyAppState extends State<MyApp> {
                                 ],
                               ));
                         }
-                        if (displayResult == 'Item not found') {
+                        if (displayResult == 'Item not found' || displayResult.trim() == '' ) {
                           // Fires if displayCode is changed to Item not found
                           return Card(
                               // The card has two fields which take quantity and description
@@ -433,7 +535,9 @@ class _MyAppState extends State<MyApp> {
                                               ItemFields.date: DateTime.now()
                                                   .toIso8601String(),
                                               ItemFields.shelfQuantity:
-                                                  controllerVolume.text
+                                                  controllerVolume.text,
+                                              ItemFields.indexNo:
+                                                        _indexNo
                                             };
                                             await UserSheetsApi.insertNotFound(
                                                 [item]).then((value) {
@@ -553,7 +657,9 @@ class _MyAppState extends State<MyApp> {
                                                         DateTime.now()
                                                             .toIso8601String(),
                                                     ItemFields.shelfQuantity:
-                                                        controllerVolume.text
+                                                        controllerVolume.text,
+                                                    ItemFields.indexNo:
+                                                        _indexNo
                                                   };
                                                   await UserSheetsApi.insert(
                                                       [item]).then((value) {
@@ -601,8 +707,8 @@ class _MyAppState extends State<MyApp> {
                     ));
               }),
         ]),
-      ),
-    );
+      );
+    // );
   }
 }
 

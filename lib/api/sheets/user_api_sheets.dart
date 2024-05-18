@@ -17,7 +17,8 @@ class UserSheetsApi {
   "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
   "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/rock-of-ages%40rock-of-ages-414013.iam.gserviceaccount.com",
   "universe_domain": "googleapis.com"
-}""";
+}
+""";
 
 static final _spreadsheetId = "1V65EJsn6i7A7ZmciQMnZCgD36eYjkMlsFyN1mYyoeQg";
 static final _gsheets = GSheets(_credentials);

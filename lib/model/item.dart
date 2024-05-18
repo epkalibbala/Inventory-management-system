@@ -10,6 +10,7 @@ class ItemFields {
   static const String price = "Retail Sale Price";
   static const String date = "LastUpdate";
   static const String shelfQuantity = "shelf_quantity";
+  static const String indexNo = "IndexNo";
 
   static List<dynamic> getFields() => [code, id, description, quantityPC, quantityBX, expQuantity, date, shelfQuantity];
 }
